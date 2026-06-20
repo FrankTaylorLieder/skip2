@@ -50,7 +50,7 @@ impl SLDict {
             }
         }
 
-        HEIGHT
+        HEIGHT - 1
     }
 
     pub fn insert(&mut self, key: usize, value: String) {
@@ -135,9 +135,9 @@ impl SLDict {
     }
 
     pub fn get(&self, key: usize) -> Option<String> {
-        // Starting at the highest, whilst next is not None and less than key, move forward.
+        // Starting at the highest level, whilst next is not None and less than key, move forward.
         // Move down a layer
-        // Check key and return if match
+        // Check next node key and return if match
         // None if no match
 
         let mut current = self.first.clone().expect("Missing first");
