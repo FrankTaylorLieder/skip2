@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 
+// TODO: Refactor to remove duplicate code.
+// TODO: Improve refcell handling to reduce code.
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
