@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -168,8 +170,69 @@ impl SLDict {
         None
     }
 
-    pub fn delete(&mut self, key: usize) -> bool {
-        todo!()
+    pub fn delete(&mut self, key: usize) -> Option<String> {
+        // As with insert, build a journey to the potential deletion point.
+        // If the next item is the key to delete, remove it.
+
+        let mut journey = vec![None; HEIGHT];
+        let mut current = self.first.clone().expect("Missing first");
+        for level in (0..HEIGHT).rev() {
+            loop {
+                let rc = current.clone();
+                let current_node = rc.borrow();
+
+                if let Some(next) = current_node.nexts.get(level).expect("Missing level")
+                    && let Some(next_key) = next.borrow().key
+                    && next_key < key
+                {
+                    // Keys on this level are still less than key, continue
+                    current = next.clone();
+                    continue;
+                }
+
+                // No next item, or larger key. So this is the journey point for this level.
+                journey[level] = Some(current.clone());
+                break;
+            }
+        }
+
+        let delete_node = {
+            // Scope this so we drop the borrow to the current node which is also the last element
+            // of the journey.
+            let rc = current.clone();
+            let current_node = rc.borrow();
+
+            let Some(next_rc) = current_node.nexts.first().expect("Missing level 0") else {
+                // No next node, so nothing to delete.
+                return None;
+            };
+
+            let next = next_rc.borrow();
+            let next_key = next.key.expect("Unexpected sentinal");
+            if next_key != key {
+                // The next item was not a match for the key, nothing to delete.
+                return None;
+            }
+
+            next_rc.clone()
+        };
+
+        let delete_node = delete_node.borrow();
+        let delete_nexts = &delete_node.nexts;
+        let height = delete_nexts.len();
+
+        // Remove the node to delete by bypassing it in the journey nodes.
+        (0..height).for_each(|level| {
+            let journey_node = journey
+                .get(level)
+                .expect("Missing journey level")
+                .clone()
+                .expect("Missing journey node");
+
+            journey_node.borrow_mut().nexts[level] = delete_nexts[level].clone();
+        });
+
+        Some(delete_node.value.clone())
     }
 
     pub fn dump(&self) {
@@ -191,10 +254,6 @@ impl SLDict {
     }
 }
 
-pub fn main() {
-    todo!()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,8 +263,9 @@ mod tests {
         let mut sl = SLDict::new();
 
         sl.insert(10, "v10".to_owned());
-        println!("Get 10: {:?}", sl.get(10));
-        dbg!(sl.get(5));
+
+        assert_eq!(sl.get(10), Some("v10".to_owned()));
+        assert_eq!(sl.get(5), None);
     }
 
     #[test]
@@ -216,6 +276,44 @@ mod tests {
             sl.insert(i, format!("v{}", i));
         }
 
+        for i in 0..10 {
+            assert_eq!(sl.get(i), Some(format!("v{}", i)));
+        }
+
         sl.dump();
+    }
+
+    #[test]
+    fn delete() {
+        let mut sl = SLDict::new();
+
+        for i in 0..10 {
+            sl.insert(i, format!("v{}", i));
+        }
+
+        let deleted = sl.delete(5);
+        assert_eq!(deleted, Some("v5".to_owned()));
+
+        let deleted = sl.delete(5);
+        assert_eq!(deleted, None);
+
+        let deleted = sl.delete(0);
+        assert_eq!(deleted, Some("v0".to_owned()));
+
+        let deleted = sl.delete(9);
+        assert_eq!(deleted, Some("v9".to_owned()));
+
+        sl.dump();
+    }
+
+    #[test]
+    fn update() {
+        let mut sl = SLDict::new();
+
+        sl.insert(10, "old".to_owned());
+        assert_eq!(sl.get(10), Some("old".to_owned()));
+
+        sl.insert(10, "new".to_owned());
+        assert_eq!(sl.get(10), Some("new".to_owned()));
     }
 }
