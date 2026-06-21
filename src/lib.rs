@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 // TODO: Refactor to remove duplicate code.
-// TODO: Improve refcell handling to reduce code.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -58,10 +57,7 @@ impl SLDict {
         let mut current = self.first.clone().expect("Missing first");
         for level in (0..HEIGHT).rev() {
             loop {
-                let rc = current.clone();
-                let current_node = rc.borrow();
-
-                if let Some(next) = current_node.nexts.get(level).expect("Missing level")
+                if let Some(next) = SLDict::next_node(&current, level)
                     && let Some(next_key) = next.borrow().key
                     && next_key < key
                 {
@@ -79,10 +75,7 @@ impl SLDict {
         {
             // Scope this so we drop the borrow to the current node which is also the last element
             // of the journey.
-            let rc = current.clone();
-            let current_node = rc.borrow();
-            let simple_update = if let Some(next_rc) =
-                current_node.nexts.first().expect("Missing level 0")
+            let simple_update = if let Some(next_rc) = SLDict::next_node(&current, 0)
                 && let next = next_rc.borrow()
                 && let Some(next_key) = next.key
                 && next_key == key
@@ -93,6 +86,8 @@ impl SLDict {
             };
 
             if simple_update {
+                let rc = current.clone();
+                let current_node = rc.borrow();
                 let next = current_node
                     .nexts
                     .first()
@@ -134,6 +129,18 @@ impl SLDict {
         }
     }
 
+    // Return a NodeRef of the next node at level.
+    // This method needs to borrow the passed in node.
+    fn next_node(node: &Shared<Node>, level: usize) -> NodeRef {
+        let rc = node.clone();
+        let current_node = rc.borrow();
+        let Some(next) = current_node.nexts.get(level).expect("Missing level") else {
+            return None;
+        };
+
+        Some(next.clone())
+    }
+
     pub fn get(&self, key: usize) -> Option<String> {
         // Starting at the highest level, whilst next is not None and less than key, move forward.
         // Move down a layer
@@ -143,10 +150,7 @@ impl SLDict {
         let mut current = self.first.clone().expect("Missing first");
         for level in (0..HEIGHT).rev() {
             loop {
-                let rc = current.clone();
-                let current_node = rc.borrow();
-
-                if let Some(next) = current_node.nexts.get(level).expect("Missing level")
+                if let Some(next) = SLDict::next_node(&current, level)
                     && let Some(next_key) = next.borrow().key
                     && next_key < key
                 {
@@ -160,9 +164,7 @@ impl SLDict {
             }
         }
 
-        let rc = current.clone();
-        let current_node = rc.borrow();
-        if let Some(next_rc) = current_node.nexts.first().expect("Missing level 0")
+        if let Some(next_rc) = SLDict::next_node(&current, 0)
             && let next = next_rc.borrow()
             && let Some(next_key) = next.key
             && next_key == key
@@ -181,10 +183,7 @@ impl SLDict {
         let mut current = self.first.clone().expect("Missing first");
         for level in (0..HEIGHT).rev() {
             loop {
-                let rc = current.clone();
-                let current_node = rc.borrow();
-
-                if let Some(next) = current_node.nexts.get(level).expect("Missing level")
+                if let Some(next) = SLDict::next_node(&current, level)
                     && let Some(next_key) = next.borrow().key
                     && next_key < key
                 {
@@ -202,10 +201,7 @@ impl SLDict {
         let delete_node = {
             // Scope this so we drop the borrow to the current node which is also the last element
             // of the journey.
-            let rc = current.clone();
-            let current_node = rc.borrow();
-
-            let Some(next_rc) = current_node.nexts.first().expect("Missing level 0") else {
+            let Some(next_rc) = SLDict::next_node(&current, 0) else {
                 // No next node, so nothing to delete.
                 return None;
             };
@@ -242,10 +238,7 @@ impl SLDict {
         for level in (0..HEIGHT).rev() {
             let mut current = self.first.clone().expect("Missing first");
             loop {
-                let current2 = current.clone();
-                let current_node = current2.borrow();
-
-                if let Some(Some(next)) = current_node.nexts.get(level) {
+                if let Some(next) = SLDict::next_node(&current, level) {
                     print!("{:?} -> ", next.borrow().key);
                     current = next.clone();
                 } else {
