@@ -72,17 +72,14 @@ impl SLDict {
             }
         }
 
-        let simple_update = if let Some(next_rc) = SLDict::next_node(&current, 0)
+        if let Some(next_rc) = SLDict::next_node(&current, 0)
             && let next = next_rc.borrow()
             && let Some(next_key) = next.key
             && next_key == key
         {
-            true
-        } else {
-            false
-        };
+            // Explicitly drop next's immutable borrow to allow the mutable borrow below.
+            drop(next);
 
-        if simple_update {
             let rc = current.clone();
             let current_node = rc.borrow();
             let next = current_node
