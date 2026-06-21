@@ -72,32 +72,28 @@ impl SLDict {
             }
         }
 
+        let simple_update = if let Some(next_rc) = SLDict::next_node(&current, 0)
+            && let next = next_rc.borrow()
+            && let Some(next_key) = next.key
+            && next_key == key
         {
-            // Scope this so we drop the borrow to the current node which is also the last element
-            // of the journey.
-            let simple_update = if let Some(next_rc) = SLDict::next_node(&current, 0)
-                && let next = next_rc.borrow()
-                && let Some(next_key) = next.key
-                && next_key == key
-            {
-                true
-            } else {
-                false
-            };
+            true
+        } else {
+            false
+        };
 
-            if simple_update {
-                let rc = current.clone();
-                let current_node = rc.borrow();
-                let next = current_node
-                    .nexts
-                    .first()
-                    .expect("Missing level 0")
-                    .clone()
-                    .expect("Missing simple update");
+        if simple_update {
+            let rc = current.clone();
+            let current_node = rc.borrow();
+            let next = current_node
+                .nexts
+                .first()
+                .expect("Missing level 0")
+                .clone()
+                .expect("Missing simple update");
 
-                next.borrow_mut().value = value;
-                return;
-            }
+            next.borrow_mut().value = value;
+            return;
         }
 
         // Construct a new node with a random height tower.
