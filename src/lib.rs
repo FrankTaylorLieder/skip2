@@ -116,11 +116,10 @@ impl SLDict {
 
         // Construct a new node with a random height tower.
         let height = self.random_height();
-        let mut new_node = Node::new(Some(key), value, height);
+        let new_node = Node::new(Some(key), value, height);
 
-        // Patch the new node in... note we must first update the new node's nexts before we can
-        // build the NodeRef to update the journey nodes nexts. Otherwise we'll have issues with
-        // ownership of the new_node and it's ref.
+        // Patch the new node in...
+        let new_rc = Rc::new(RefCell::new(new_node));
         for level in 0..height {
             let journey_node = journey
                 .get(level)
@@ -128,18 +127,8 @@ impl SLDict {
                 .clone()
                 .expect("Missing journey node");
 
-            new_node.nexts[level] = SLDict::next_node(&journey_node, level);
-        }
-
-        let new_ref = Rc::new(RefCell::new(new_node));
-        for level in 0..height {
-            let journey_node = journey
-                .get(level)
-                .expect("Missing journey level")
-                .clone()
-                .expect("Missing journey node");
-
-            SLDict::set_next(&journey_node, level, Some(new_ref.clone()));
+            SLDict::set_next(&new_rc, level, SLDict::next_node(&journey_node, level));
+            SLDict::set_next(&journey_node, level, Some(new_rc.clone()));
         }
     }
 
@@ -217,7 +206,7 @@ impl SLDict {
         let height = SLDict::node_height(&delete_node);
 
         // Remove the node to delete by bypassing it in the journey nodes.
-        (0..height).for_each(|level| {
+        for level in 0..height {
             let journey_node = journey
                 .get(level)
                 .expect("Missing journey level")
@@ -225,7 +214,7 @@ impl SLDict {
                 .expect("Missing journey node");
 
             SLDict::set_next(&journey_node, level, SLDict::next_node(&delete_node, level));
-        });
+        }
 
         Some(SLDict::get_value(&delete_node))
     }
@@ -265,11 +254,11 @@ mod tests {
         let mut sl = SLDict::new();
 
         for i in 0..10 {
-            sl.insert(i, format!("v{}", i));
+            sl.insert(i, format!("v{i}"));
         }
 
         for i in 0..10 {
-            assert_eq!(sl.get(i), Some(format!("v{}", i)));
+            assert_eq!(sl.get(i), Some(format!("v{i}")));
         }
 
         sl.dump();
@@ -280,7 +269,7 @@ mod tests {
         let mut sl = SLDict::new();
 
         for i in 0..10 {
-            sl.insert(i, format!("v{}", i));
+            sl.insert(i, format!("v{i}"));
         }
 
         let deleted = sl.delete(5);
