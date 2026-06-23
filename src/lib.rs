@@ -52,13 +52,47 @@ impl SLDict {
         HEIGHT - 1
     }
 
+    // Encapsulate all the borrowing in these utility methods.
+
+    fn next_node(node: &Shared<Node>, level: usize) -> NodeRef {
+        let rc = node.clone();
+        let current_node = rc.borrow();
+        let Some(next) = current_node.nexts.get(level).expect("Missing level") else {
+            return None;
+        };
+
+        Some(next.clone())
+    }
+
+    fn get_key(node: &Shared<Node>) -> Option<usize> {
+        node.borrow().key
+    }
+
+    fn get_value(node: &Shared<Node>) -> String {
+        node.borrow().value.clone()
+    }
+
+    fn set_value(node: &Shared<Node>, value: &str) {
+        let mut node = node.borrow_mut();
+        node.value = value.to_owned();
+    }
+
+    fn set_next(node: &Shared<Node>, level: usize, next: NodeRef) {
+        let mut node = node.borrow_mut();
+        node.nexts[level] = next;
+    }
+
+    fn node_height(node: &Shared<Node>) -> usize {
+        node.borrow().nexts.len()
+    }
+
     pub fn insert(&mut self, key: usize, value: String) {
         let mut journey = vec![None; HEIGHT];
         let mut current = self.first.clone().expect("Missing first");
         for level in (0..HEIGHT).rev() {
             loop {
                 if let Some(next) = SLDict::next_node(&current, level)
-                    && let Some(next_key) = next.borrow().key
+                    && let Some(next_key) = SLDict::get_key(&next)
                     && next_key < key
                 {
                     // Keys on this level are still less than key, continue
@@ -73,23 +107,10 @@ impl SLDict {
         }
 
         if let Some(next_rc) = SLDict::next_node(&current, 0)
-            && let next = next_rc.borrow()
-            && let Some(next_key) = next.key
+            && let Some(next_key) = SLDict::get_key(&next_rc)
             && next_key == key
         {
-            // Explicitly drop next's immutable borrow to allow the mutable borrow below.
-            drop(next);
-
-            let rc = current.clone();
-            let current_node = rc.borrow();
-            let next = current_node
-                .nexts
-                .first()
-                .expect("Missing level 0")
-                .clone()
-                .expect("Missing simple update");
-
-            next.borrow_mut().value = value;
+            SLDict::set_value(&next_rc, &value);
             return;
         }
 
@@ -107,7 +128,7 @@ impl SLDict {
                 .clone()
                 .expect("Missing journey node");
 
-            new_node.nexts[level] = journey_node.borrow().nexts[level].clone();
+            new_node.nexts[level] = SLDict::next_node(&journey_node, level);
         }
 
         let new_ref = Rc::new(RefCell::new(new_node));
@@ -118,20 +139,8 @@ impl SLDict {
                 .clone()
                 .expect("Missing journey node");
 
-            journey_node.borrow_mut().nexts[level] = Some(new_ref.clone());
+            SLDict::set_next(&journey_node, level, Some(new_ref.clone()));
         }
-    }
-
-    // Return a NodeRef of the next node at level.
-    // This method needs to borrow the passed in node.
-    fn next_node(node: &Shared<Node>, level: usize) -> NodeRef {
-        let rc = node.clone();
-        let current_node = rc.borrow();
-        let Some(next) = current_node.nexts.get(level).expect("Missing level") else {
-            return None;
-        };
-
-        Some(next.clone())
     }
 
     pub fn get(&self, key: usize) -> Option<String> {
@@ -144,7 +153,7 @@ impl SLDict {
         for level in (0..HEIGHT).rev() {
             loop {
                 if let Some(next) = SLDict::next_node(&current, level)
-                    && let Some(next_key) = next.borrow().key
+                    && let Some(next_key) = SLDict::get_key(&next)
                     && next_key < key
                 {
                     // Keys on this level are still less than key, continue
@@ -158,11 +167,10 @@ impl SLDict {
         }
 
         if let Some(next_rc) = SLDict::next_node(&current, 0)
-            && let next = next_rc.borrow()
-            && let Some(next_key) = next.key
+            && let Some(next_key) = SLDict::get_key(&next_rc)
             && next_key == key
         {
-            return Some(next.value.clone());
+            return Some(SLDict::get_value(&next_rc));
         };
 
         None
@@ -177,7 +185,7 @@ impl SLDict {
         for level in (0..HEIGHT).rev() {
             loop {
                 if let Some(next) = SLDict::next_node(&current, level)
-                    && let Some(next_key) = next.borrow().key
+                    && let Some(next_key) = SLDict::get_key(&next)
                     && next_key < key
                 {
                     // Keys on this level are still less than key, continue
@@ -192,15 +200,12 @@ impl SLDict {
         }
 
         let delete_node = {
-            // Scope this so we drop the borrow to the current node which is also the last element
-            // of the journey.
             let Some(next_rc) = SLDict::next_node(&current, 0) else {
                 // No next node, so nothing to delete.
                 return None;
             };
 
-            let next = next_rc.borrow();
-            let next_key = next.key.expect("Unexpected sentinal");
+            let next_key = SLDict::get_key(&next_rc).expect("Unexpected sentinal");
             if next_key != key {
                 // The next item was not a match for the key, nothing to delete.
                 return None;
@@ -209,9 +214,7 @@ impl SLDict {
             next_rc.clone()
         };
 
-        let delete_node = delete_node.borrow();
-        let delete_nexts = &delete_node.nexts;
-        let height = delete_nexts.len();
+        let height = SLDict::node_height(&delete_node);
 
         // Remove the node to delete by bypassing it in the journey nodes.
         (0..height).for_each(|level| {
@@ -221,10 +224,10 @@ impl SLDict {
                 .clone()
                 .expect("Missing journey node");
 
-            journey_node.borrow_mut().nexts[level] = delete_nexts[level].clone();
+            SLDict::set_next(&journey_node, level, SLDict::next_node(&delete_node, level));
         });
 
-        Some(delete_node.value.clone())
+        Some(SLDict::get_value(&delete_node))
     }
 
     pub fn dump(&self) {
@@ -232,7 +235,7 @@ impl SLDict {
             let mut current = self.first.clone().expect("Missing first");
             loop {
                 if let Some(next) = SLDict::next_node(&current, level) {
-                    print!("{:?} -> ", next.borrow().key);
+                    print!("{:?} -> ", SLDict::get_key(&next));
                     current = next.clone();
                 } else {
                     println!("END");
