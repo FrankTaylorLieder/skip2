@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-// TODO: Refactor to remove duplicate code.
-
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -86,8 +84,12 @@ impl SLDict {
         node.borrow().nexts.len()
     }
 
-    pub fn insert(&mut self, key: usize, value: String) {
-        let mut journey = vec![None; HEIGHT];
+    fn find_predecessor(&self, key: usize, with_journey: bool) -> (NodeRef, Option<Vec<NodeRef>>) {
+        let mut maybe_journey = if with_journey {
+            Some(vec![None; HEIGHT])
+        } else {
+            None
+        };
         let mut current = self.first.clone().expect("Missing first");
         for level in (0..HEIGHT).rev() {
             loop {
@@ -100,11 +102,29 @@ impl SLDict {
                     continue;
                 }
 
-                // No next item, or larger key. So this is the journey point for this level.
-                journey[level] = Some(current.clone());
+                if let Some(journey) = maybe_journey.as_mut() {
+                    // No next item, or larger key. So this is the journey point for this level.
+                    journey[level] = Some(current.clone());
+                }
                 break;
             }
         }
+
+        (Some(current), maybe_journey)
+    }
+
+    fn get_journey_node(journey: &[NodeRef], level: usize) -> Shared<Node> {
+        journey
+            .get(level)
+            .expect("Missing journey level")
+            .clone()
+            .expect("Missing journey node")
+    }
+
+    pub fn insert(&mut self, key: usize, value: String) {
+        let (current, journey) = self.find_predecessor(key, true);
+        let current = current.expect("Missing predecessor");
+        let journey = journey.expect("Missing journey");
 
         if let Some(next_rc) = SLDict::next_node(&current, 0)
             && let Some(next_key) = SLDict::get_key(&next_rc)
@@ -121,11 +141,7 @@ impl SLDict {
         // Patch the new node in...
         let new_rc = Rc::new(RefCell::new(new_node));
         for level in 0..height {
-            let journey_node = journey
-                .get(level)
-                .expect("Missing journey level")
-                .clone()
-                .expect("Missing journey node");
+            let journey_node = SLDict::get_journey_node(&journey, level);
 
             SLDict::set_next(&new_rc, level, SLDict::next_node(&journey_node, level));
             SLDict::set_next(&journey_node, level, Some(new_rc.clone()));
@@ -138,22 +154,8 @@ impl SLDict {
         // Check next node key and return if match
         // None if no match
 
-        let mut current = self.first.clone().expect("Missing first");
-        for level in (0..HEIGHT).rev() {
-            loop {
-                if let Some(next) = SLDict::next_node(&current, level)
-                    && let Some(next_key) = SLDict::get_key(&next)
-                    && next_key < key
-                {
-                    // Keys on this level are still less than key, continue
-                    current = next.clone();
-                    continue;
-                }
-
-                // No next item, or larger key.
-                break;
-            }
-        }
+        let (current, _) = self.find_predecessor(key, false);
+        let current = current.expect("Missing predecessor");
 
         if let Some(next_rc) = SLDict::next_node(&current, 0)
             && let Some(next_key) = SLDict::get_key(&next_rc)
@@ -169,24 +171,9 @@ impl SLDict {
         // As with insert, build a journey to the potential deletion point.
         // If the next item is the key to delete, remove it.
 
-        let mut journey = vec![None; HEIGHT];
-        let mut current = self.first.clone().expect("Missing first");
-        for level in (0..HEIGHT).rev() {
-            loop {
-                if let Some(next) = SLDict::next_node(&current, level)
-                    && let Some(next_key) = SLDict::get_key(&next)
-                    && next_key < key
-                {
-                    // Keys on this level are still less than key, continue
-                    current = next.clone();
-                    continue;
-                }
-
-                // No next item, or larger key. So this is the journey point for this level.
-                journey[level] = Some(current.clone());
-                break;
-            }
-        }
+        let (current, journey) = self.find_predecessor(key, true);
+        let current = current.expect("Missing predecessor");
+        let journey = journey.expect("Missing journey");
 
         let delete_node = {
             let Some(next_rc) = SLDict::next_node(&current, 0) else {
@@ -207,11 +194,7 @@ impl SLDict {
 
         // Remove the node to delete by bypassing it in the journey nodes.
         for level in 0..height {
-            let journey_node = journey
-                .get(level)
-                .expect("Missing journey level")
-                .clone()
-                .expect("Missing journey node");
+            let journey_node = SLDict::get_journey_node(&journey, level);
 
             SLDict::set_next(&journey_node, level, SLDict::next_node(&delete_node, level));
         }
